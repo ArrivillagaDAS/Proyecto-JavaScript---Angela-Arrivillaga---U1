@@ -193,7 +193,9 @@ const Navegacion = {
     else if (vista==='parqueadero') ParqueaderoModulo.renderizar();
   },
   cerrarBarraLateral() { $('barraLateral').classList.remove('open'); $('capaSuperpuestaLateral').classList.remove('show'); },
-  alternarBarraLateral() { $('barraLateral').classList.toggle('open'); $('capaSuperpuestaLateral').classList.toggle('show'); }
+  alternarBarraLateral() { $('barraLateral').classList.toggle('open'); $('capaSuperpuestaLateral').classList.toggle('show'); },
+  cerrarBarraLateralCliente() { $('barraLateralCliente').classList.remove('open'); $('capaSuperpuestaLateral').classList.remove('show'); },
+  alternarBarraLateralCliente() { $('barraLateralCliente').classList.toggle('open'); $('capaSuperpuestaLateral').classList.toggle('show'); }
 };
 
 
@@ -835,94 +837,6 @@ const Aplicacion = {
     $('nombreBarra').textContent   = u.name;
     $('correoBarra').textContent  = u.email;
   },
-  abrirPago(id) {
-    const r   = Almacen.obtenerRegistros().find(x => x.id === id);
-    if (!r) return;
-    this._idPago = id;
-    const vt = Almacen.obtenerTipos().find(t => t.id === r.vehicleTypeId);
-    $('infoPago').innerHTML = `
-      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
-        <span class="plate">${r.plate}</span>
-        <span style="color:var(--text-d)">${vt?.name||'—'}</span>
-        <span>Slot <strong>${r.slot}</strong></span>
-        <span>Entrada: <strong>${r.entryTime}</strong></span>
-        <span style="color:var(--primary);font-weight:600">Tarifa: ${formatearMoneda(vt?.rate||0)}/h</span>
-      </div>`;
-    $('salidaPago').value = new Date().toTimeString().slice(0,5);
-    $('pantallaCostoPago').classList.add('hidden');
-    ['errPagoNum','errPagoNombre','errPagoVence','errPagoCVV','errorSalidaPago'].forEach(ocultarError);
-    $('pagoNumTarjeta').value = '';
-    $('pagoNombre').value = '';
-    $('pagoVence').value = '';
-    $('pagoCVV').value = '';
-    $('pagoIconoTarjetaInput').innerHTML = svgTarjeta;
-    Modal.abrir('capaPago');
-  },
-  _calcularCostoPago() {
-    const r  = Almacen.obtenerRegistros().find(x => x.id === this._idPago);
-    if (!r) return null;
-    const vt = Almacen.obtenerTipos().find(t => t.id === r.vehicleTypeId);
-    const exitT = $('salidaPago').value;
-    if (!exitT) { mostrarError('errorSalidaPago','Ingrese la hora de salida.'); return null; }
-    const [eh,em] = r.entryTime.split(':').map(Number);
-    const [xh,xm] = exitT.split(':').map(Number);
-    const eM = eh*60+em, xM = xh*60+xm;
-    if (xM <= eM) { mostrarError('errorSalidaPago','La hora de salida debe ser posterior a la entrada.'); return null; }
-    ocultarError('errorSalidaPago');
-    const mins = xM - eM;
-    const hrs  = mins / 60;
-    const cost = Math.ceil(hrs * (vt?.rate||0));
-    const h = Math.floor(mins/60), m = mins%60;
-    $('duracionPago').textContent = `Duración: ${h}h ${m}m`;
-    $('montoPago').textContent = formatearMoneda(cost);
-    $('pantallaCostoPago').classList.remove('hidden');
-    return { exitTime: exitT, cost };
-  },
-  confirmarPago() {
-    const res = this._calcularCostoPago();
-    if (!res) return;
-    // validación básica de datos de tarjeta
-    const num    = $('pagoNumTarjeta').value.replace(/\s/g,'');
-    const nombre = $('pagoNombre').value.trim();
-    const vence  = $('pagoVence').value.trim();
-    const cvv    = $('pagoCVV').value.trim();
-    let ok = true;
-    if (num.length < 16)        { mostrarError('errPagoNum','Número de tarjeta incompleto.'); ok=false; } else ocultarError('errPagoNum');
-    if (!nombre)                 { mostrarError('errPagoNombre','Ingrese el nombre.'); ok=false; } else ocultarError('errPagoNombre');
-    if (!/^\d{2} \/ \d{2}$/.test(vence)) { mostrarError('errPagoVence','Formato MM / AA.'); ok=false; } else ocultarError('errPagoVence');
-    if (cvv.length < 3)         { mostrarError('errPagoCVV','CVV inválido.'); ok=false; } else ocultarError('errPagoCVV');
-    if (!ok) return;
-    // guardar el pago
-    const recs = Almacen.obtenerRegistros();
-    const i = recs.findIndex(r => r.id === this._idPago);
-    recs[i] = {...recs[i], exitTime: res.exitTime, cost: res.cost, status: 'completed'};
-    Almacen.guardarRegistros(recs);
-    Modal.cerrar('capaPago');
-    this.renderizarMisVehiculos();
-    this.renderizarPanelCliente();
-    lanzarToast(`Pago exitoso — Total: ${formatearMoneda(res.cost)}`, 'success');
-  },
-  iniciarMapa() {
-    if (this._mapaIniciado) { this._mapa.invalidateSize(); return; }
-    // Edificio TEC, Zona 4, Guatemala
-    const lat = 14.6056, lng = -90.5133;
-    this._mapa = L.map('mapaLeaflet', { zoomControl: true, scrollWheelZoom: false }).setView([lat, lng], 17);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19
-    }).addTo(this._mapa);
-    const icono = L.divIcon({
-      html: '<div style="background:var(--primary);width:36px;height:36px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4)"></div>',
-      iconSize: [36, 36],
-      iconAnchor: [18, 36],
-      className: ''
-    });
-    L.marker([lat, lng], { icon: icono })
-      .addTo(this._mapa)
-      .bindPopup('<b style="font-family:Barlow Condensed,sans-serif;font-size:15px">Campus Parking</b><br><span style="font-size:13px;color:#555">Edificio TEC, Zona 4<br>Ciudad de Guatemala</span>', { maxWidth: 200 })
-      .openPopup();
-    this._mapaIniciado = true;
-  },
   _vincularEventos() {
     
     // toggle entre login y registro
@@ -969,7 +883,8 @@ const Aplicacion = {
     
     // hamburguesa mobile
     $('btnHamburguesa').addEventListener('click', () => Navegacion.alternarBarraLateral());
-    $('capaSuperpuestaLateral').addEventListener('click', () => Navegacion.cerrarBarraLateral());
+    $('btnHamburguesaCliente').addEventListener('click', () => Navegacion.alternarBarraLateralCliente());
+    $('capaSuperpuestaLateral').addEventListener('click', () => { Navegacion.cerrarBarraLateral(); Navegacion.cerrarBarraLateralCliente(); });
     
     // cerrar sesión
     $('btnCerrarSesion').addEventListener('click', () => { if(confirm('¿Cerrar sesión?')) Autenticacion.cerrarSesion(); });
