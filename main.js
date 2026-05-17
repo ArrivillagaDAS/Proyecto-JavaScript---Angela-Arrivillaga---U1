@@ -514,3 +514,487 @@ const PanelDashboard = {
     document.querySelectorAll('cp-badge').forEach(b => b._renderizar && b._renderizar());
   }
 };
+
+
+// todo lo que ve el cliente registrado
+
+const ClienteModulo = {
+  init() {
+    this.renderizarPanelCliente();
+    this.renderizarMisVehiculos();
+    this.renderizarTarifasCliente();
+    this.generarQRContactoFijo();
+    this._vincularMenuCliente();
+    this._vincularEventos();
+  },
+  _vincularMenuCliente() {
+    const elementosMenu = [
+      { boton: 'menuCliPanel',        subVista: 'subCliPanel',        titulo: 'Mi Estado' },
+      { boton: 'menuCliMisVehiculos', subVista: 'subCliMisVehiculos', titulo: 'Mis Vehículos' },
+      { boton: 'menuCliPrecios',      subVista: 'subCliPrecios',      titulo: 'Tarifas del Parqueadero' },
+      { boton: 'menuCliUbicacion',    subVista: 'subCliUbicacion',    titulo: 'Ubicación' },
+      { boton: 'menuCliContacto',     subVista: 'subCliContacto',     titulo: 'Soporte Administrativo' }
+    ];
+    elementosMenu.forEach(item => {
+      $(item.boton).onclick = () => {
+        elementosMenu.forEach(b => {
+          $(b.boton).classList.remove('active');
+          $(b.subVista).classList.add('hidden');
+        });
+        $(item.boton).classList.add('active');
+        $(item.subVista).classList.remove('hidden');
+        $('tituloBarraCliente').textContent = item.titulo;
+        if (item.boton === 'menuCliUbicacion') ClienteModulo.iniciarMapa();
+      };
+    });
+  },
+  abrirPago(id) {
+    const r   = Almacen.obtenerRegistros().find(x => x.id === id);
+    if (!r) return;
+    this._idPago = id;
+    const vt = Almacen.obtenerTipos().find(t => t.id === r.vehicleTypeId);
+    $('infoPago').innerHTML = `
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+        <span class="plate">${r.plate}</span>
+        <span style="color:var(--text-d)">${vt?.name||'—'}</span>
+        <span>Slot <strong>${r.slot}</strong></span>
+        <span>Entrada: <strong>${r.entryTime}</strong></span>
+        <span style="color:var(--primary);font-weight:600">Tarifa: ${formatearMoneda(vt?.rate||0)}/h</span>
+      </div>`;
+    $('salidaPago').value = new Date().toTimeString().slice(0,5);
+    $('pantallaCostoPago').classList.add('hidden');
+    ['errPagoNum','errPagoNombre','errPagoVence','errPagoCVV','errorSalidaPago'].forEach(ocultarError);
+    $('pagoNumTarjeta').value = '';
+    $('pagoNombre').value = '';
+    $('pagoVence').value = '';
+    $('pagoCVV').value = '';
+    $('pagoIconoTarjetaInput').innerHTML = svgTarjeta;
+    Modal.abrir('capaPago');
+  },
+  _calcularCostoPago() {
+    const r  = Almacen.obtenerRegistros().find(x => x.id === this._idPago);
+    if (!r) return null;
+    const vt = Almacen.obtenerTipos().find(t => t.id === r.vehicleTypeId);
+    const exitT = $('salidaPago').value;
+    if (!exitT) { mostrarError('errorSalidaPago','Ingrese la hora de salida.'); return null; }
+    const [eh,em] = r.entryTime.split(':').map(Number);
+    const [xh,xm] = exitT.split(':').map(Number);
+    const eM = eh*60+em, xM = xh*60+xm;
+    if (xM <= eM) { mostrarError('errorSalidaPago','La hora de salida debe ser posterior a la entrada.'); return null; }
+    ocultarError('errorSalidaPago');
+    const mins = xM - eM;
+    const hrs  = mins / 60;
+    const cost = Math.ceil(hrs * (vt?.rate||0));
+    const h = Math.floor(mins/60), m = mins%60;
+    $('duracionPago').textContent = `Duración: ${h}h ${m}m`;
+    $('montoPago').textContent = formatearMoneda(cost);
+    $('pantallaCostoPago').classList.remove('hidden');
+    return { exitTime: exitT, cost };
+  },
+  confirmarPago() {
+    const res = this._calcularCostoPago();
+    if (!res) return;
+    // validación básica de datos de tarjeta
+    const num    = $('pagoNumTarjeta').value.replace(/\s/g,'');
+    const nombre = $('pagoNombre').value.trim();
+    const vence  = $('pagoVence').value.trim();
+    const cvv    = $('pagoCVV').value.trim();
+    let ok = true;
+    if (num.length < 16)        { mostrarError('errPagoNum','Número de tarjeta incompleto.'); ok=false; } else ocultarError('errPagoNum');
+    if (!nombre)                 { mostrarError('errPagoNombre','Ingrese el nombre.'); ok=false; } else ocultarError('errPagoNombre');
+    if (!/^\d{2} \/ \d{2}$/.test(vence)) { mostrarError('errPagoVence','Formato MM / AA.'); ok=false; } else ocultarError('errPagoVence');
+    if (cvv.length < 3)         { mostrarError('errPagoCVV','CVV inválido.'); ok=false; } else ocultarError('errPagoCVV');
+    if (!ok) return;
+    // guardar el pago
+    const recs = Almacen.obtenerRegistros();
+    const i = recs.findIndex(r => r.id === this._idPago);
+    recs[i] = {...recs[i], exitTime: res.exitTime, cost: res.cost, status: 'completed'};
+    Almacen.guardarRegistros(recs);
+    Modal.cerrar('capaPago');
+    this.renderizarMisVehiculos();
+    this.renderizarPanelCliente();
+    lanzarToast(`Pago exitoso — Total: ${formatearMoneda(res.cost)}`, 'success');
+  },
+  iniciarMapa() {
+    if (this._mapaIniciado) { this._mapa.invalidateSize(); return; }
+    // Edificio TEC, Zona 4, Guatemala
+    const lat = 14.6056, lng = -90.5133;
+    this._mapa = L.map('mapaLeaflet', { zoomControl: true, scrollWheelZoom: false }).setView([lat, lng], 17);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19
+    }).addTo(this._mapa);
+    const icono = L.divIcon({
+      html: '<div style="background:var(--primary);width:36px;height:36px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4)"></div>',
+      iconSize: [36, 36],
+      iconAnchor: [18, 36],
+      className: ''
+    });
+    L.marker([lat, lng], { icon: icono })
+      .addTo(this._mapa)
+      .bindPopup('<b style="font-family:Barlow Condensed,sans-serif;font-size:15px">Campus Parking</b><br><span style="font-size:13px;color:#555">Edificio TEC, Zona 4<br>Ciudad de Guatemala</span>', { maxWidth: 200 })
+      .openPopup();
+    this._mapaIniciado = true;
+  },
+  _vincularEventos() {
+    $('btnCliRegistrarVehiculo').onclick = () => this.abrirRegistroVehiculo();
+    $('btnGuardarVehiculoCliente').onclick = () => this.guardarVehiculo();
+    $('cliPlaca').addEventListener('input', function(){ this.value = this.value.toUpperCase(); });
+    $('btnCalcularPago').onclick   = () => this._calcularCostoPago();
+    $('btnConfirmarPago').onclick   = () => this.confirmarPago();
+    $('pagoNumTarjeta').addEventListener('input', function() {
+      let v = this.value.replace(/\D/g,'').slice(0,16);
+      this.value = v.replace(/(\d{4})(?=\d)/g,'$1 ');
+      const icono = $('pagoIconoTarjetaInput');
+      // Visa, Mastercard, Amex - simplemente mantenemos el mismo ícono
+      icono.innerHTML = svgTarjeta;
+    });
+    $('pagoVence').addEventListener('input', function() {
+      let v = this.value.replace(/\D/g,'');
+      if (v.length >= 2) v = v.slice(0,2) + ' / ' + v.slice(2,4);
+      this.value = v;
+    });
+    $('btnPerfilCliente').onclick = () => this.abrirPerfil();
+    $('btnGuardarPerfilCliente').onclick = () => this.guardarPerfil();
+  },
+  renderizarPanelCliente() {
+    const u = Autenticacion.obtenerUsuarioLogueado();
+    const avatarCli = $('avatarCliente');
+    if (avatarCli && u?.nombre) avatarCli.textContent = u.nombre.charAt(0).toUpperCase();
+    if ($('nombreClienteSuperior')) $('nombreClienteSuperior').textContent = u?.nombre || 'Cliente';
+    if ($('subCliPanelSub')) $('subCliPanelSub').textContent = `Hola, ${u?.nombre || 'Cliente'}`;
+    const recs = Almacen.obtenerRegistros();
+    const tipos = Almacen.obtenerTipos();
+    const CAPACIDAD_POR_TIPO = 10;
+    const totalCapacidad = tipos.length * CAPACIDAD_POR_TIPO;
+    const activos = recs.filter(r => r.status === 'active').length;
+    const disponibles = Math.max(0, totalCapacidad - activos);
+    $('cliDisponibles').textContent = `${disponibles} de ${totalCapacidad}`;
+    const misRecs = recs.filter(r => r.ownerCorreo === u?.correo && r.status === 'active');
+    if (misRecs.length) {
+      $('cliStatusAuto').innerHTML = misRecs.map(r => {
+        const vt = tipos.find(t => t.id === r.vehicleTypeId);
+        const dotSvg = `<svg width="8" height="8" viewBox="0 0 8 8" style="vertical-align:middle;margin-right:4px"><circle cx="4" cy="4" r="4" fill="#22c55e"/></svg>`;
+        return `<div style="margin-bottom:6px">${dotSvg}<strong>${r.plate}</strong> · Slot: ${r.slot} · <span style="color:var(--text-d)">${vt?.name||'—'}</span></div>`;
+      }).join('');
+    } else {
+      $('cliStatusAuto').innerHTML = `<span style="color:var(--text-d)">Sin vehículos registrados actualmente.</span>`;
+    }
+  },
+  renderizarMisVehiculos() {
+    const u = Autenticacion.obtenerUsuarioLogueado();
+    const recs = Almacen.obtenerRegistros().filter(r => r.ownerCorreo === u?.correo);
+    const tipos = Almacen.obtenerTipos();
+    const body = $('cuerpoMisVehiculos');
+    if (!recs.length) { body.innerHTML = ''; $('vacioMisVehiculos').classList.remove('hidden'); return; }
+    $('vacioMisVehiculos').classList.add('hidden');
+    body.innerHTML = recs.map(r => {
+      const vt = tipos.find(t => t.id === r.vehicleTypeId);
+      const costoCell = r.status === 'completed'
+        ? `<td style="font-family:var(--fm);font-weight:700;color:var(--primary)">${r.cost != null ? formatearMoneda(r.cost) : '—'}</td>`
+        : `<td style="color:var(--text-m)">En curso</td>`;
+      const accionCell = r.status === 'active'
+        ? `<td><button class="btn btn-success btn-sm" onclick="ClienteModulo.abrirPago('${r.id}')">Pagar</button></td>`
+        : `<td><span style="font-size:12px;color:var(--text-m)">—</span></td>`;
+      return `<tr>
+        <td><span class="plate">${r.plate}</span></td>
+        <td>${vt?.name||'—'}</td>
+        <td><span class="mono">${r.slot}</span></td>
+        <td><span class="mono">${r.entryTime}</span></td>
+        <td><span class="mono">${r.exitTime||'—'}</span></td>
+        ${costoCell}
+        <td><cp-badge status="${r.status}"></cp-badge></td>
+        ${accionCell}
+      </tr>`;
+    }).join('');
+    document.querySelectorAll('cp-badge').forEach(b => b._renderizar && b._renderizar());
+  },
+  abrirRegistroVehiculo() {
+    const tipos = Almacen.obtenerTipos();
+    if (!tipos.length) { lanzarToast('El administrador aún no ha configurado tipos de vehículo.', 'warning'); return; }
+    $('cliPlaca').value = ''; $('cliSlot').value = '';
+    $('cliFecha').value = new Date().toISOString().split('T')[0];
+    $('cliEntrada').value = new Date().toTimeString().slice(0,5);
+    $('cliTipo').innerHTML = '<option value="">— Seleccione tipo —</option>' +
+      tipos.map(t => `<option value="${t.id}">${t.name} — ${formatearMoneda(t.rate)}/h</option>`).join('');
+    ['errCliPlaca','errCliSlot','errCliTipo'].forEach(ocultarError);
+    Modal.abrir('capaRegistroVehiculoCliente');
+  },
+  guardarVehiculo() {
+    const u = Autenticacion.obtenerUsuarioLogueado();
+    const plate = $('cliPlaca').value.trim().toUpperCase();
+    const slot  = $('cliSlot').value.trim().toUpperCase();
+    const vtId  = $('cliTipo').value;
+    const date  = $('cliFecha').value;
+    const entry = $('cliEntrada').value;
+    let ok = true;
+    if (!plate) { mostrarError('errCliPlaca','La placa es requerida.'); ok=false; }
+    else if (!/^[A-Z]{3}[0-9]{3}$/.test(plate)) { mostrarError('errCliPlaca','Formato inválido. Ej: ABC123'); ok=false; }
+    else ocultarError('errCliPlaca');
+    if (!slot) { mostrarError('errCliSlot','El slot es requerido.'); ok=false; } else ocultarError('errCliSlot');
+    if (!vtId) { mostrarError('errCliTipo','Seleccione un tipo.'); ok=false; } else ocultarError('errCliTipo');
+    if (!ok) return;
+    const recs = Almacen.obtenerRegistros();
+    if (recs.find(r => r.plate===plate && r.status==='active')) { mostrarError('errCliPlaca','Esta placa ya tiene un servicio activo.'); return; }
+    if (recs.find(r => r.slot===slot && r.status==='active')) { mostrarError('errCliSlot','Este slot ya está ocupado.'); return; }
+    recs.unshift({ id:obtenerIdUnico(), plate, slot, vehicleTypeId:vtId, date, entryTime:entry, exitTime:null, cost:null, status:'active', ownerCorreo:u.correo, createdAt:Date.now() });
+    Almacen.guardarRegistros(recs);
+    Modal.cerrar('capaRegistroVehiculoCliente');
+    lanzarToast('¡Vehículo registrado exitosamente!', 'success');
+    this.renderizarPanelCliente();
+    this.renderizarMisVehiculos();
+  },
+  abrirPerfil() {
+    const u = Autenticacion.obtenerUsuarioLogueado();
+    const cuentas = JSON.parse(localStorage.getItem('cp_cuentas_clientes') || '[]');
+    const cuenta = cuentas.find(c => c.correo === u?.correo);
+    if (!cuenta) return;
+    $('cliPerfilNombre').value = cuenta.nombre;
+    $('cliPerfilCorreo').value = cuenta.correo;
+    $('cliPerfilClave').value = '';
+    $('cliPerfilClaveConfirmar').value = '';
+    ocultarError('errCliPerfilClave');
+    Modal.abrir('capaPerfilCliente');
+  },
+  guardarPerfil() {
+    const u = Autenticacion.obtenerUsuarioLogueado();
+    const nombre = $('cliPerfilNombre').value.trim();
+    const correo = $('cliPerfilCorreo').value.trim().toLowerCase();
+    const clave  = $('cliPerfilClave').value;
+    const claveC = $('cliPerfilClaveConfirmar').value;
+    if (!nombre || !correo) { lanzarToast('Nombre y correo son requeridos.', 'error'); return; }
+    if (clave && clave !== claveC) { $('errCliPerfilClave').classList.remove('hidden'); return; }
+    ocultarError('errCliPerfilClave');
+    const cuentas = JSON.parse(localStorage.getItem('cp_cuentas_clientes') || '[]');
+    const idx = cuentas.findIndex(c => c.correo === u?.correo);
+    if (idx === -1) return;
+    cuentas[idx].nombre = nombre;
+    cuentas[idx].correo = correo;
+    if (clave) cuentas[idx].clave = clave;
+    localStorage.setItem('cp_cuentas_clientes', JSON.stringify(cuentas));
+    /* actualizar sesión activa */
+    u.nombre = nombre; u.correo = correo;
+    localStorage.setItem('cp_sesion_activa', JSON.stringify(u));
+    Modal.cerrar('capaPerfilCliente');
+    this.renderizarPanelCliente();
+    lanzarToast('Perfil actualizado correctamente.', 'success');
+  },
+  renderizarTarifasCliente() {
+    const listadoTipos = Almacen.obtenerTipos();
+    const tablaCuerpo = $('cuerpoPreciosCliente');
+    if (!listadoTipos.length) {
+      tablaCuerpo.innerHTML = `<tr><td colspan="2" style="padding:12px; text-align:center; color:var(--text-d)">No hay tarifas configuradas.</td></tr>`;
+      return;
+    }
+    tablaCuerpo.innerHTML = listadoTipos.map(t => `
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:12px; font-weight:600;">${t.name}</td>
+        <td style="padding:12px; text-align:right; font-family:var(--fm); color:var(--primary); font-weight:700;">${formatearMoneda(t.rate)}/h</td>
+      </tr>
+    `).join('');
+  },
+  generarQRContactoFijo() {
+    const textoMensajeWhatsApp = "Hola Soporte de Campus Parking Guatemala, requiero asistencia con un espacio del parqueadero.";
+    const urlEnlaceCompleto = `https://wa.me/50254067622?text=${encodeURIComponent(textoMensajeWhatsApp)}`;
+    const urlApiQrExterna = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(urlEnlaceCompleto)}`;
+    $('qrContactoFijo').innerHTML = `<img src="${urlApiQrExterna}" alt="QR Soporte" style="display:block; margin: 0 auto; background:white; padding:10px; border-radius:var(--rs); box-shadow: 0 4px 12px rgba(0,0,0,0.2);">`;
+  }
+};
+
+
+// inicialización y arranque de la app
+
+const Aplicacion = {
+  
+  init() {
+    Autenticacion.estaLogueado() ? this.mostrarApp() : this.mostrarLogin();
+    this._vincularEventos();
+  },
+  mostrarLogin() { 
+    $('vistaLogin').classList.remove('hidden'); 
+    $('vistaApp').classList.add('hidden'); 
+    $('vistaCliente').classList.add('hidden');
+  },
+  mostrarApp()   { 
+    const u = Autenticacion.obtenerUsuarioLogueado();
+    $('vistaLogin').classList.add('hidden');
+    if (u.rol === 'admin') {
+      $('vistaApp').classList.remove('hidden'); 
+      this.actualizarInterfaz(); 
+      Navegacion.irA('panel'); 
+    } else {
+      $('nombreClienteSuperior').textContent = u.nombre;
+      $('vistaCliente').classList.remove('hidden');
+      ClienteModulo.init();
+    }
+  },
+  actualizarInterfaz() {
+    const u = Almacen.obtenerUsuario();
+    const init = u.name.charAt(0).toUpperCase();
+    $('avatarBarra').textContent = init;
+    $('nombreBarra').textContent   = u.name;
+    $('correoBarra').textContent  = u.email;
+  },
+  abrirPago(id) {
+    const r   = Almacen.obtenerRegistros().find(x => x.id === id);
+    if (!r) return;
+    this._idPago = id;
+    const vt = Almacen.obtenerTipos().find(t => t.id === r.vehicleTypeId);
+    $('infoPago').innerHTML = `
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+        <span class="plate">${r.plate}</span>
+        <span style="color:var(--text-d)">${vt?.name||'—'}</span>
+        <span>Slot <strong>${r.slot}</strong></span>
+        <span>Entrada: <strong>${r.entryTime}</strong></span>
+        <span style="color:var(--primary);font-weight:600">Tarifa: ${formatearMoneda(vt?.rate||0)}/h</span>
+      </div>`;
+    $('salidaPago').value = new Date().toTimeString().slice(0,5);
+    $('pantallaCostoPago').classList.add('hidden');
+    ['errPagoNum','errPagoNombre','errPagoVence','errPagoCVV','errorSalidaPago'].forEach(ocultarError);
+    $('pagoNumTarjeta').value = '';
+    $('pagoNombre').value = '';
+    $('pagoVence').value = '';
+    $('pagoCVV').value = '';
+    $('pagoIconoTarjetaInput').innerHTML = svgTarjeta;
+    Modal.abrir('capaPago');
+  },
+  _calcularCostoPago() {
+    const r  = Almacen.obtenerRegistros().find(x => x.id === this._idPago);
+    if (!r) return null;
+    const vt = Almacen.obtenerTipos().find(t => t.id === r.vehicleTypeId);
+    const exitT = $('salidaPago').value;
+    if (!exitT) { mostrarError('errorSalidaPago','Ingrese la hora de salida.'); return null; }
+    const [eh,em] = r.entryTime.split(':').map(Number);
+    const [xh,xm] = exitT.split(':').map(Number);
+    const eM = eh*60+em, xM = xh*60+xm;
+    if (xM <= eM) { mostrarError('errorSalidaPago','La hora de salida debe ser posterior a la entrada.'); return null; }
+    ocultarError('errorSalidaPago');
+    const mins = xM - eM;
+    const hrs  = mins / 60;
+    const cost = Math.ceil(hrs * (vt?.rate||0));
+    const h = Math.floor(mins/60), m = mins%60;
+    $('duracionPago').textContent = `Duración: ${h}h ${m}m`;
+    $('montoPago').textContent = formatearMoneda(cost);
+    $('pantallaCostoPago').classList.remove('hidden');
+    return { exitTime: exitT, cost };
+  },
+  confirmarPago() {
+    const res = this._calcularCostoPago();
+    if (!res) return;
+    // validación básica de datos de tarjeta
+    const num    = $('pagoNumTarjeta').value.replace(/\s/g,'');
+    const nombre = $('pagoNombre').value.trim();
+    const vence  = $('pagoVence').value.trim();
+    const cvv    = $('pagoCVV').value.trim();
+    let ok = true;
+    if (num.length < 16)        { mostrarError('errPagoNum','Número de tarjeta incompleto.'); ok=false; } else ocultarError('errPagoNum');
+    if (!nombre)                 { mostrarError('errPagoNombre','Ingrese el nombre.'); ok=false; } else ocultarError('errPagoNombre');
+    if (!/^\d{2} \/ \d{2}$/.test(vence)) { mostrarError('errPagoVence','Formato MM / AA.'); ok=false; } else ocultarError('errPagoVence');
+    if (cvv.length < 3)         { mostrarError('errPagoCVV','CVV inválido.'); ok=false; } else ocultarError('errPagoCVV');
+    if (!ok) return;
+    // guardar el pago
+    const recs = Almacen.obtenerRegistros();
+    const i = recs.findIndex(r => r.id === this._idPago);
+    recs[i] = {...recs[i], exitTime: res.exitTime, cost: res.cost, status: 'completed'};
+    Almacen.guardarRegistros(recs);
+    Modal.cerrar('capaPago');
+    this.renderizarMisVehiculos();
+    this.renderizarPanelCliente();
+    lanzarToast(`Pago exitoso — Total: ${formatearMoneda(res.cost)}`, 'success');
+  },
+  iniciarMapa() {
+    if (this._mapaIniciado) { this._mapa.invalidateSize(); return; }
+    // Edificio TEC, Zona 4, Guatemala
+    const lat = 14.6056, lng = -90.5133;
+    this._mapa = L.map('mapaLeaflet', { zoomControl: true, scrollWheelZoom: false }).setView([lat, lng], 17);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19
+    }).addTo(this._mapa);
+    const icono = L.divIcon({
+      html: '<div style="background:var(--primary);width:36px;height:36px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4)"></div>',
+      iconSize: [36, 36],
+      iconAnchor: [18, 36],
+      className: ''
+    });
+    L.marker([lat, lng], { icon: icono })
+      .addTo(this._mapa)
+      .bindPopup('<b style="font-family:Barlow Condensed,sans-serif;font-size:15px">Campus Parking</b><br><span style="font-size:13px;color:#555">Edificio TEC, Zona 4<br>Ciudad de Guatemala</span>', { maxWidth: 200 })
+      .openPopup();
+    this._mapaIniciado = true;
+  },
+  _vincularEventos() {
+    
+    // toggle entre login y registro
+    $('enlaceIrARegistro').onclick = (e) => {
+      e.preventDefault();
+      $('tarjetaLogin').classList.add('hidden');
+      $('tarjetaRegistro').classList.remove('hidden');
+    };
+    $('enlaceIrALogin').onclick = (e) => {
+      e.preventDefault();
+      $('tarjetaRegistro').classList.add('hidden');
+      $('tarjetaLogin').classList.remove('hidden');
+    };
+    
+    // crear cuenta nueva
+    $('btnRegistrarCuenta').onclick = () => {
+      const nom = $('regNombre').value.trim();
+      const cor = $('regCorreo').value.trim();
+      const cla = $('regClave').value;
+      if (Autenticacion.registrarCliente(nom, cor, cla)) {
+        lanzarToast('¡Cuenta creada correctamente! Ya puede ingresar.', 'success');
+        $('tarjetaRegistro').classList.add('hidden');
+        $('tarjetaLogin').classList.remove('hidden');
+        $('regNombre').value = ''; $('regCorreo').value = ''; $('regClave').value = '';
+        $('registroError').classList.add('hidden');
+      } else {
+        $('registroError').classList.remove('hidden');
+      }
+    };
+    
+    // submit del login
+    $('btnIngresar').onclick = () => {
+      const email  = $('correoLogin').value.trim();
+      const pass   = $('claveLogin').value;
+      if (Autenticacion.iniciarSesion(email, pass)) { 
+        ocultarError('errorLogin'); 
+        this.mostrarApp(); 
+      }
+      else $('errorLogin').classList.remove('hidden');
+    };
+    
+    // navegación
+    document.querySelectorAll('.ni[data-view]').forEach(b => b.addEventListener('click', () => Navegacion.irA(b.dataset.view)));
+    
+    // hamburguesa mobile
+    $('btnHamburguesa').addEventListener('click', () => Navegacion.alternarBarraLateral());
+    $('capaSuperpuestaLateral').addEventListener('click', () => Navegacion.cerrarBarraLateral());
+    
+    // cerrar sesión
+    $('btnCerrarSesion').addEventListener('click', () => { if(confirm('¿Cerrar sesión?')) Autenticacion.cerrarSesion(); });
+    $('btnCerrarSesionCliente').onclick = () => { if(confirm('¿Cerrar sesión de cliente?')) Autenticacion.cerrarSesion(); };
+    
+    // perfil
+    $('btnPerfilBarra').addEventListener('click', () => Perfil.abrir());
+    $('btnGuardarPerfil').addEventListener('click', () => Perfil.guardar());
+    
+    // tipos de vehículo
+    $('btnAgregarTipoVehiculo').addEventListener('click', () => TiposVehiculo.abrirNuevo());
+    $('btnGuardarTipoVehiculo').addEventListener('click', () => TiposVehiculo.guardar());
+    
+    // parqueadero
+    $('btnAgregarParqueadero').addEventListener('click', () => ParqueaderoModulo.abrirNuevo());
+    $('btnGuardarParqueadero').addEventListener('click', () => ParqueaderoModulo.guardar());
+    $('btnCalcular').addEventListener('click', () => ParqueaderoModulo._calcularCosto());
+    $('btnTerminar').addEventListener('click', () => ParqueaderoModulo.finalizar());
+    
+    // placas siempre en mayúscula
+    $('placaParqueadero').addEventListener('input', function(){ this.value = this.value.toUpperCase(); });
+    
+    // búsqueda en tiempo real
+    $('buscarParqueadero').addEventListener('input', function(){ ParqueaderoModulo._busqueda = this.value.trim(); ParqueaderoModulo.renderizar(); });
+  }
+};
+
+Aplicacion.init();

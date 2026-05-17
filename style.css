@@ -547,3 +547,66 @@ cp-toast {
   background: var(--surface-h);
   font-family: var(--fb);
 }
+
+.leaflet-popup-content-wrapper {
+  background: var(--surface-e);
+  border: 1px solid var(--border);
+  border-radius: var(--rs);
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  color: var(--text);
+}
+
+.leaflet-popup-tip { background: var(--surface-e); }
+
+.leaflet-control-zoom a {
+  background: var(--surface-e) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+.leaflet-control-zoom a:hover { background: var(--surface-h) !important; }
+
+/* modal de pago con tarjeta */
+
+#pagoNumTarjeta { letter-spacing: .15em; }
+
+
+/* skeleton loader (#8) */
+
+.skeleton-card {
+  min-height: 110px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  position: relative;
+}
+
+.skeleton-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,.04) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.6s infinite;
+}
+
+.skeleton-card::after {
+  content: '';
+  position: absolute;
+  top: 20px; left: 20px; right: 20px;
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  box-shadow: 0 24px 0 var(--border), 0 48px 0 rgba(255,255,255,.05);
+}
+
+@keyframes skeletonShimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
