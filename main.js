@@ -44,7 +44,7 @@ class CpBadge extends HTMLElement {
 }
 
 class CpStatCard extends HTMLElement {
-  // íconos SVG para cada tipo de stat
+  // iconos svg para cada tipo de stat
   static svgs = {
     vehiculos: `<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v3"/><rect x="9" y="11" width="14" height="10" rx="1"/><circle cx="12" cy="21" r="1"/><circle cx="20" cy="21" r="1"/></svg>`,
     activos:   `<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 12h3a2 2 0 0 0 0-4H9v8"/></svg>`,
@@ -89,6 +89,9 @@ const lanzarToast = (msg, type='info') => componenteToast.show(msg, type);
 function mostrarError(id, msg) { const e = $(id); if(e){ e.textContent = msg; e.classList.remove('hidden'); } }
 function ocultarError(id) { const e = $(id); if(e) e.classList.add('hidden'); }
 
+// devuelve la hora actual en formato HH:MM
+function horaActual() { return new Date().toTimeString().slice(0,5); }
+
 
 // localStorage wrapper — lectura/escritura de datos
 
@@ -105,7 +108,43 @@ const Almacen = {
 if (!Almacen._obtener('cp_user')) Almacen.guardarUsuario({ name:'Admin', email:'admin@campusparking.com', password:'Admin123' });
 
 
-// autenticación — login, registro y manejo de sesión
+// slots disponibles del parqueadero — A-01 hasta A-20
+// se generan dinamicamente y se filtran segun cuales ya esten ocupados
+
+const SLOTS_TOTALES = Array.from({ length: 20 }, (_, i) => {
+  const num = String(i + 1).padStart(2, '0');
+  return `A-${num}`;
+});
+
+// devuelve los slots que no tienen un registro activo en este momento
+// si se pasa un idExcluir, ese registro no cuenta (util al editar)
+function obtenerSlotsLibres(idExcluir = null) {
+  const recs = Almacen.obtenerRegistros();
+  const ocupados = recs
+    .filter(r => r.status === 'active' && r.id !== idExcluir)
+    .map(r => r.slot);
+  return SLOTS_TOTALES.filter(s => !ocupados.includes(s));
+}
+
+// llena un <select> con los slots libres
+// si se pasa un slotActual, lo incluye aunque este ocupado (para no perderlo al editar)
+function llenarSelectSlots(selectId, slotActual = null, idExcluir = null) {
+  const sel = $(selectId);
+  const libres = obtenerSlotsLibres(idExcluir);
+  // si hay un slot actual que ya no esta libre, lo agregamos igual para que no desaparezca
+  const lista = (slotActual && !libres.includes(slotActual))
+    ? [slotActual, ...libres]
+    : libres;
+  if (!lista.length) {
+    sel.innerHTML = '<option value="">— Sin espacios disponibles —</option>';
+    return;
+  }
+  sel.innerHTML = '<option value="">— Elige un espacio —</option>' +
+    lista.map(s => `<option value="${s}"${s === slotActual ? ' selected' : ''}>${s}</option>`).join('');
+}
+
+
+// autenticacion — login, registro y manejo de sesion
 
 const Autenticacion = {
   _usuarioActual: null,
@@ -142,12 +181,12 @@ const Autenticacion = {
     const correoLimpio = correo.trim().toLowerCase();
     const adminConfig = Almacen.obtenerUsuario();
     if (correoLimpio === adminConfig.email.toLowerCase()) {
-      lanzarToast('El correo electrónico coincide con el administrador.', 'error');
+      lanzarToast('El correo electronico coincide con el administrador.', 'error');
       return false;
     }
     const cuentas = JSON.parse(localStorage.getItem('cp_cuentas_clientes') || '[]');
     if (cuentas.find(c => c.correo.toLowerCase() === correoLimpio)) {
-      lanzarToast('El correo electrónico ya está registrado.', 'error');
+      lanzarToast('El correo electronico ya esta registrado.', 'error');
       return false;
     }
     cuentas.push({ nombre, correo: correoLimpio, clave });
@@ -176,7 +215,7 @@ document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click
 document.querySelectorAll('.overlay').forEach(o => o.addEventListener('click', e => { if(e.target===o) Modal.cerrar(o.id); }));
 
 
-// navegación entre vistas del admin
+// navegacion entre vistas del admin
 
 const Navegacion = {
   titulos: { panel:'Dashboard', tiposVehiculo:'Tipos de Vehículo', parqueadero:'Parqueadero' },
@@ -198,6 +237,8 @@ const Navegacion = {
 
 
 // perfil del administrador
+// al guardar cualquier cambio (nombre, correo o contrasena) se cierra la sesion
+// para que el admin tenga que volver a autenticarse con los nuevos datos
 
 const Perfil = {
   abrir() {
@@ -221,14 +262,15 @@ const Perfil = {
     u.name = name; u.email = email;
     if (pass) u.password = pass;
     Almacen.guardarUsuario(u);
-    Aplicacion.actualizarInterfaz();
     Modal.cerrar('capaPerfil');
-    lanzarToast('Perfil actualizado correctamente.', 'success');
+    lanzarToast('Perfil actualizado. Por seguridad, vuelve a iniciar sesion.', 'success');
+    // cerramos la sesion para que el usuario confirme su identidad con los nuevos datos
+    setTimeout(() => Autenticacion.cerrarSesion(), 1800);
   }
 };
 
 
-// crud de tipos de vehículo
+// crud de tipos de vehiculo
 
 const TiposVehiculo = {
   _idEditar: null,
@@ -310,6 +352,8 @@ const ParqueaderoModulo = {
   _idEditar: null,
   _idFinalizar: null,
   _busqueda: '',
+  // hora capturada cuando se abre el formulario de nuevo registro
+  _horaEntradaCapturada: null,
   renderizar() {
     const recs  = Almacen.obtenerRegistros();
     const types = Almacen.obtenerTipos();
@@ -331,7 +375,6 @@ const ParqueaderoModulo = {
         <td><cp-badge status="${r.status}"></cp-badge></td>
         <td><div class="acts">
           ${r.status==='active'?`<button class="btn btn-success btn-sm" onclick="ParqueaderoModulo.abrirFinalizar('${r.id}')">Salida</button>`:''}
-          
           <button class="btn btn-ghost btn-icon btn-sm" onclick="ParqueaderoModulo.editar('${r.id}')" title="Editar">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
@@ -352,12 +395,15 @@ const ParqueaderoModulo = {
     if (!Almacen.obtenerTipos().length) { lanzarToast('Primero debe crear tipos de vehículo.','warning'); return; }
     this._idEditar = null;
     $('tituloModalParqueadero').textContent = 'Nuevo Registro';
-    $('placaParqueadero').value=''; $('slotParqueadero').value='';
+    $('placaParqueadero').value = '';
     $('fechaParqueadero').value = new Date().toISOString().split('T')[0];
-    $('entradaParqueadero').value = new Date().toTimeString().slice(0,5);
-    $('salidaParqueadero').value = '';
+    // capturamos la hora exacta en que el admin abre el formulario
+    this._horaEntradaCapturada = horaActual();
+    $('entradaParqueadero').value = this._horaEntradaCapturada;
+    // llenamos el select con los slots disponibles en este momento
+    llenarSelectSlots('slotParqueadero');
     this._llenarTipos();
-    ['errorPlacaParqueadero','errorSlotParqueadero','errorTipoParqueadero','errorSalidaParqueadero'].forEach(ocultarError);
+    ['errorPlacaParqueadero','errorSlotParqueadero','errorTipoParqueadero'].forEach(ocultarError);
     Modal.abrir('capaParqueadero');
   },
   editar(id) {
@@ -365,43 +411,40 @@ const ParqueaderoModulo = {
     if (!r) return;
     this._idEditar = id;
     $('tituloModalParqueadero').textContent = 'Editar Registro';
-    $('placaParqueadero').value = r.plate; $('slotParqueadero').value = r.slot;
-    $('fechaParqueadero').value = r.date; $('entradaParqueadero').value = r.entryTime;
-    $('salidaParqueadero').value = r.exitTime || '';
-    this._llenarTipos(); $('tipoParqueadero').value = r.vehicleTypeId;
-    ['errorPlacaParqueadero','errorSlotParqueadero','errorTipoParqueadero','errorSalidaParqueadero'].forEach(ocultarError);
+    $('placaParqueadero').value = r.plate;
+    $('fechaParqueadero').value = r.date;
+    // al editar conservamos la hora original del registro
+    this._horaEntradaCapturada = r.entryTime;
+    $('entradaParqueadero').value = r.entryTime;
+    // al editar incluimos el slot actual aunque ya no este libre
+    llenarSelectSlots('slotParqueadero', r.slot, id);
+    this._llenarTipos();
+    $('tipoParqueadero').value = r.vehicleTypeId;
+    ['errorPlacaParqueadero','errorSlotParqueadero','errorTipoParqueadero'].forEach(ocultarError);
     Modal.abrir('capaParqueadero');
   },
   guardar() {
-    const plate  = $('placaParqueadero').value.trim().toUpperCase();
-    const slot   = $('slotParqueadero').value.trim().toUpperCase();
-    const vtId   = $('tipoParqueadero').value;
-    const date   = $('fechaParqueadero').value;
-    const entry  = $('entradaParqueadero').value;
-    const salida = $('salidaParqueadero').value;
+    const plate = $('placaParqueadero').value.trim().toUpperCase();
+    const slot  = $('slotParqueadero').value;
+    const vtId  = $('tipoParqueadero').value;
+    const date  = $('fechaParqueadero').value;
+    const entry = this._horaEntradaCapturada;
     let ok = true;
     if (!plate) { mostrarError('errorPlacaParqueadero','La placa es requerida.'); ok=false; }
     else if (!/^[A-Z]{3}[0-9]{3}$/.test(plate)) { mostrarError('errorPlacaParqueadero','Formato inválido. Use ABC123 (3 letras + 3 números).'); ok=false; }
     else ocultarError('errorPlacaParqueadero');
-    if (!slot) { mostrarError('errorSlotParqueadero','El slot es requerido.'); ok=false; } else ocultarError('errorSlotParqueadero');
+    if (!slot) { mostrarError('errorSlotParqueadero','Seleccione un slot disponible.'); ok=false; } else ocultarError('errorSlotParqueadero');
     if (!vtId) { mostrarError('errorTipoParqueadero','Seleccione un tipo.'); ok=false; } else ocultarError('errorTipoParqueadero');
-    if (salida && entry) {
-      const [eh,em] = entry.split(':').map(Number);
-      const [sh,sm] = salida.split(':').map(Number);
-      if (sh*60+sm <= eh*60+em) { mostrarError('errorSalidaParqueadero','La hora de salida debe ser posterior a la entrada.'); ok=false; }
-      else ocultarError('errorSalidaParqueadero');
-    }
     if (!ok) return;
     const recs = Almacen.obtenerRegistros();
     if (recs.find(r => r.plate===plate && r.status==='active' && r.id!==this._idEditar)) { mostrarError('errorPlacaParqueadero','Esta placa ya tiene un servicio activo.'); return; }
     if (recs.find(r => r.slot===slot && r.status==='active' && r.id!==this._idEditar)) { mostrarError('errorSlotParqueadero','Este slot ya está ocupado.'); return; }
-    const status = salida ? 'completed' : 'active';
     if (this._idEditar) {
       const i = recs.findIndex(r => r.id===this._idEditar);
-      recs[i] = {...recs[i], plate, slot, vehicleTypeId:vtId, date, entryTime:entry, exitTime:salida||null, status};
+      recs[i] = {...recs[i], plate, slot, vehicleTypeId:vtId, date, entryTime:entry};
       lanzarToast('Registro actualizado.', 'success');
     } else {
-      recs.unshift({ id:obtenerIdUnico(), plate, slot, vehicleTypeId:vtId, date, entryTime:entry, exitTime:salida||null, cost:null, status, createdAt:Date.now() });
+      recs.unshift({ id:obtenerIdUnico(), plate, slot, vehicleTypeId:vtId, date, entryTime:entry, exitTime:null, cost:null, status:'active', createdAt:Date.now() });
       lanzarToast('Vehículo registrado.', 'success');
     }
     Almacen.guardarRegistros(recs); Modal.cerrar('capaParqueadero'); this.renderizar();
@@ -412,20 +455,20 @@ const ParqueaderoModulo = {
     this._idFinalizar = id;
     const vt = Almacen.obtenerTipos().find(t => t.id===r.vehicleTypeId);
     $('infoFinalizar').innerHTML = `<strong style="font-family:'JetBrains Mono',monospace;background:#fff;color:#111;padding:2px 8px;border-radius:4px;border:2px solid #222;letter-spacing:.1em">${r.plate}</strong> &nbsp;·&nbsp; ${vt?.name||'—'} &nbsp;·&nbsp; Entrada: <strong>${r.entryTime}</strong> &nbsp;·&nbsp; Tarifa: <strong>${formatearMoneda(vt?.rate||0)}/h</strong>`;
-    $('salidaFinalizar').value = new Date().toTimeString().slice(0,5);
     ocultarError('errorFinalizar'); $('pantallaCosto').classList.add('hidden');
     Modal.abrir('capaFinalizar');
   },
+  // calcula el costo usando la hora actual como salida — no se puede elegir hora manual
   _calcularCosto() {
     const r  = Almacen.obtenerRegistros().find(x => x.id===this._idFinalizar);
     if (!r) return null;
     const vt = Almacen.obtenerTipos().find(t => t.id===r.vehicleTypeId);
-    const exitT = $('salidaFinalizar').value;
-    if (!exitT) { mostrarError('errorFinalizar','Ingrese la hora de salida.'); return null; }
+    // la hora de salida es ahora mismo, no la elige el usuario
+    const exitT = horaActual();
     const [eh,em] = r.entryTime.split(':').map(Number);
     const [xh,xm] = exitT.split(':').map(Number);
     const eM = eh*60+em, xM = xh*60+xm;
-    if (xM <= eM) { mostrarError('errorFinalizar','La hora de salida debe ser posterior a la entrada.'); return null; }
+    if (xM <= eM) { mostrarError('errorFinalizar','La hora de salida actual es igual o anterior a la entrada. Verifica el horario.'); return null; }
     ocultarError('errorFinalizar');
     const mins = xM - eM;
     const hrs  = mins / 60;
@@ -519,6 +562,9 @@ const PanelDashboard = {
 // todo lo que ve el cliente registrado
 
 const ClienteModulo = {
+  // hora guardada al momento de abrir el formulario de registro
+  _horaEntradaCliente: null,
+
   init() {
     this.renderizarPanelCliente();
     this.renderizarMisVehiculos();
@@ -561,7 +607,8 @@ const ClienteModulo = {
         <span>Entrada: <strong>${r.entryTime}</strong></span>
         <span style="color:var(--primary);font-weight:600">Tarifa: ${formatearMoneda(vt?.rate||0)}/h</span>
       </div>`;
-    $('salidaPago').value = new Date().toTimeString().slice(0,5);
+    // mostramos la hora actual de forma automatica, el cliente no la puede cambiar
+    $('salidaPago').value = horaActual();
     $('pantallaCostoPago').classList.add('hidden');
     ['errPagoNum','errPagoNombre','errPagoVence','errPagoCVV','errorSalidaPago'].forEach(ocultarError);
     $('pagoNumTarjeta').value = '';
@@ -571,16 +618,18 @@ const ClienteModulo = {
     $('pagoIconoTarjetaInput').innerHTML = svgTarjeta;
     Modal.abrir('capaPago');
   },
+  // usa la hora actual como salida, no se puede manipular manualmente
   _calcularCostoPago() {
     const r  = Almacen.obtenerRegistros().find(x => x.id === this._idPago);
     if (!r) return null;
     const vt = Almacen.obtenerTipos().find(t => t.id === r.vehicleTypeId);
-    const exitT = $('salidaPago').value;
-    if (!exitT) { mostrarError('errorSalidaPago','Ingrese la hora de salida.'); return null; }
+    const exitT = horaActual();
+    // actualizamos el campo de solo lectura con la hora recalculada
+    $('salidaPago').value = exitT;
     const [eh,em] = r.entryTime.split(':').map(Number);
     const [xh,xm] = exitT.split(':').map(Number);
     const eM = eh*60+em, xM = xh*60+xm;
-    if (xM <= eM) { mostrarError('errorSalidaPago','La hora de salida debe ser posterior a la entrada.'); return null; }
+    if (xM <= eM) { mostrarError('errorSalidaPago','La hora actual es igual o anterior a la entrada. Verifica el horario.'); return null; }
     ocultarError('errorSalidaPago');
     const mins = xM - eM;
     const hrs  = mins / 60;
@@ -594,7 +643,7 @@ const ClienteModulo = {
   confirmarPago() {
     const res = this._calcularCostoPago();
     if (!res) return;
-    // validación básica de datos de tarjeta
+    // validacion basica de datos de tarjeta
     const num    = $('pagoNumTarjeta').value.replace(/\s/g,'');
     const nombre = $('pagoNombre').value.trim();
     const vence  = $('pagoVence').value.trim();
@@ -605,7 +654,7 @@ const ClienteModulo = {
     if (!/^\d{2} \/ \d{2}$/.test(vence)) { mostrarError('errPagoVence','Formato MM / AA.'); ok=false; } else ocultarError('errPagoVence');
     if (cvv.length < 3)         { mostrarError('errPagoCVV','CVV inválido.'); ok=false; } else ocultarError('errPagoCVV');
     if (!ok) return;
-    // guardar el pago
+    // guardamos el pago con los datos calculados
     const recs = Almacen.obtenerRegistros();
     const i = recs.findIndex(r => r.id === this._idPago);
     recs[i] = {...recs[i], exitTime: res.exitTime, cost: res.cost, status: 'completed'};
@@ -617,7 +666,7 @@ const ClienteModulo = {
   },
   iniciarMapa() {
     if (this._mapaIniciado) { this._mapa.invalidateSize(); return; }
-    // Edificio TEC, Zona 4, Guatemala
+    // edificio TEC, Zona 4, Guatemala
     const lat = 14.6056, lng = -90.5133;
     this._mapa = L.map('mapaLeaflet', { zoomControl: true, scrollWheelZoom: false }).setView([lat, lng], 17);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -645,9 +694,7 @@ const ClienteModulo = {
     $('pagoNumTarjeta').addEventListener('input', function() {
       let v = this.value.replace(/\D/g,'').slice(0,16);
       this.value = v.replace(/(\d{4})(?=\d)/g,'$1 ');
-      const icono = $('pagoIconoTarjetaInput');
-      // Visa, Mastercard, Amex - simplemente mantenemos el mismo ícono
-      icono.innerHTML = svgTarjeta;
+      $('pagoIconoTarjetaInput').innerHTML = svgTarjeta;
     });
     $('pagoVence').addEventListener('input', function() {
       let v = this.value.replace(/\D/g,'');
@@ -712,9 +759,13 @@ const ClienteModulo = {
   abrirRegistroVehiculo() {
     const tipos = Almacen.obtenerTipos();
     if (!tipos.length) { lanzarToast('El administrador aún no ha configurado tipos de vehículo.', 'warning'); return; }
-    $('cliPlaca').value = ''; $('cliSlot').value = '';
+    $('cliPlaca').value = '';
     $('cliFecha').value = new Date().toISOString().split('T')[0];
-    $('cliEntrada').value = new Date().toTimeString().slice(0,5);
+    // capturamos la hora al momento exacto en que el cliente abre el formulario
+    this._horaEntradaCliente = horaActual();
+    $('cliEntrada').value = this._horaEntradaCliente;
+    // llenamos el select de slots con los disponibles ahora mismo
+    llenarSelectSlots('cliSlot');
     $('cliTipo').innerHTML = '<option value="">— Seleccione tipo —</option>' +
       tipos.map(t => `<option value="${t.id}">${t.name} — ${formatearMoneda(t.rate)}/h</option>`).join('');
     ['errCliPlaca','errCliSlot','errCliTipo'].forEach(ocultarError);
@@ -723,15 +774,15 @@ const ClienteModulo = {
   guardarVehiculo() {
     const u = Autenticacion.obtenerUsuarioLogueado();
     const plate = $('cliPlaca').value.trim().toUpperCase();
-    const slot  = $('cliSlot').value.trim().toUpperCase();
+    const slot  = $('cliSlot').value;
     const vtId  = $('cliTipo').value;
     const date  = $('cliFecha').value;
-    const entry = $('cliEntrada').value;
+    const entry = this._horaEntradaCliente;
     let ok = true;
     if (!plate) { mostrarError('errCliPlaca','La placa es requerida.'); ok=false; }
     else if (!/^[A-Z]{3}[0-9]{3}$/.test(plate)) { mostrarError('errCliPlaca','Formato inválido. Ej: ABC123'); ok=false; }
     else ocultarError('errCliPlaca');
-    if (!slot) { mostrarError('errCliSlot','El slot es requerido.'); ok=false; } else ocultarError('errCliSlot');
+    if (!slot) { mostrarError('errCliSlot','Seleccione un slot disponible.'); ok=false; } else ocultarError('errCliSlot');
     if (!vtId) { mostrarError('errCliTipo','Seleccione un tipo.'); ok=false; } else ocultarError('errCliTipo');
     if (!ok) return;
     const recs = Almacen.obtenerRegistros();
@@ -756,6 +807,8 @@ const ClienteModulo = {
     ocultarError('errCliPerfilClave');
     Modal.abrir('capaPerfilCliente');
   },
+  // al guardar el perfil del cliente tambien se cierra la sesion
+  // para que vuelva a autenticarse con los datos nuevos
   guardarPerfil() {
     const u = Autenticacion.obtenerUsuarioLogueado();
     const nombre = $('cliPerfilNombre').value.trim();
@@ -772,12 +825,10 @@ const ClienteModulo = {
     cuentas[idx].correo = correo;
     if (clave) cuentas[idx].clave = clave;
     localStorage.setItem('cp_cuentas_clientes', JSON.stringify(cuentas));
-    /* actualizar sesión activa */
-    u.nombre = nombre; u.correo = correo;
-    localStorage.setItem('cp_sesion_activa', JSON.stringify(u));
     Modal.cerrar('capaPerfilCliente');
-    this.renderizarPanelCliente();
-    lanzarToast('Perfil actualizado correctamente.', 'success');
+    lanzarToast('Perfil actualizado. Por seguridad, vuelve a iniciar sesion.', 'success');
+    // cerramos la sesion para que el cliente confirme con los nuevos datos
+    setTimeout(() => Autenticacion.cerrarSesion(), 1800);
   },
   renderizarTarifasCliente() {
     const listadoTipos = Almacen.obtenerTipos();
@@ -802,26 +853,26 @@ const ClienteModulo = {
 };
 
 
-// inicialización y arranque de la app
+// inicializacion y arranque de la app
 
 const Aplicacion = {
-  
+
   init() {
     Autenticacion.estaLogueado() ? this.mostrarApp() : this.mostrarLogin();
     this._vincularEventos();
   },
-  mostrarLogin() { 
-    $('vistaLogin').classList.remove('hidden'); 
-    $('vistaApp').classList.add('hidden'); 
+  mostrarLogin() {
+    $('vistaLogin').classList.remove('hidden');
+    $('vistaApp').classList.add('hidden');
     $('vistaCliente').classList.add('hidden');
   },
-  mostrarApp()   { 
+  mostrarApp() {
     const u = Autenticacion.obtenerUsuarioLogueado();
     $('vistaLogin').classList.add('hidden');
     if (u.rol === 'admin') {
-      $('vistaApp').classList.remove('hidden'); 
-      this.actualizarInterfaz(); 
-      Navegacion.irA('panel'); 
+      $('vistaApp').classList.remove('hidden');
+      this.actualizarInterfaz();
+      Navegacion.irA('panel');
     } else {
       $('nombreClienteSuperior').textContent = u.nombre;
       $('vistaCliente').classList.remove('hidden');
@@ -832,99 +883,11 @@ const Aplicacion = {
     const u = Almacen.obtenerUsuario();
     const init = u.name.charAt(0).toUpperCase();
     $('avatarBarra').textContent = init;
-    $('nombreBarra').textContent   = u.name;
+    $('nombreBarra').textContent  = u.name;
     $('correoBarra').textContent  = u.email;
   },
-  abrirPago(id) {
-    const r   = Almacen.obtenerRegistros().find(x => x.id === id);
-    if (!r) return;
-    this._idPago = id;
-    const vt = Almacen.obtenerTipos().find(t => t.id === r.vehicleTypeId);
-    $('infoPago').innerHTML = `
-      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
-        <span class="plate">${r.plate}</span>
-        <span style="color:var(--text-d)">${vt?.name||'—'}</span>
-        <span>Slot <strong>${r.slot}</strong></span>
-        <span>Entrada: <strong>${r.entryTime}</strong></span>
-        <span style="color:var(--primary);font-weight:600">Tarifa: ${formatearMoneda(vt?.rate||0)}/h</span>
-      </div>`;
-    $('salidaPago').value = new Date().toTimeString().slice(0,5);
-    $('pantallaCostoPago').classList.add('hidden');
-    ['errPagoNum','errPagoNombre','errPagoVence','errPagoCVV','errorSalidaPago'].forEach(ocultarError);
-    $('pagoNumTarjeta').value = '';
-    $('pagoNombre').value = '';
-    $('pagoVence').value = '';
-    $('pagoCVV').value = '';
-    $('pagoIconoTarjetaInput').innerHTML = svgTarjeta;
-    Modal.abrir('capaPago');
-  },
-  _calcularCostoPago() {
-    const r  = Almacen.obtenerRegistros().find(x => x.id === this._idPago);
-    if (!r) return null;
-    const vt = Almacen.obtenerTipos().find(t => t.id === r.vehicleTypeId);
-    const exitT = $('salidaPago').value;
-    if (!exitT) { mostrarError('errorSalidaPago','Ingrese la hora de salida.'); return null; }
-    const [eh,em] = r.entryTime.split(':').map(Number);
-    const [xh,xm] = exitT.split(':').map(Number);
-    const eM = eh*60+em, xM = xh*60+xm;
-    if (xM <= eM) { mostrarError('errorSalidaPago','La hora de salida debe ser posterior a la entrada.'); return null; }
-    ocultarError('errorSalidaPago');
-    const mins = xM - eM;
-    const hrs  = mins / 60;
-    const cost = Math.ceil(hrs * (vt?.rate||0));
-    const h = Math.floor(mins/60), m = mins%60;
-    $('duracionPago').textContent = `Duración: ${h}h ${m}m`;
-    $('montoPago').textContent = formatearMoneda(cost);
-    $('pantallaCostoPago').classList.remove('hidden');
-    return { exitTime: exitT, cost };
-  },
-  confirmarPago() {
-    const res = this._calcularCostoPago();
-    if (!res) return;
-    // validación básica de datos de tarjeta
-    const num    = $('pagoNumTarjeta').value.replace(/\s/g,'');
-    const nombre = $('pagoNombre').value.trim();
-    const vence  = $('pagoVence').value.trim();
-    const cvv    = $('pagoCVV').value.trim();
-    let ok = true;
-    if (num.length < 16)        { mostrarError('errPagoNum','Número de tarjeta incompleto.'); ok=false; } else ocultarError('errPagoNum');
-    if (!nombre)                 { mostrarError('errPagoNombre','Ingrese el nombre.'); ok=false; } else ocultarError('errPagoNombre');
-    if (!/^\d{2} \/ \d{2}$/.test(vence)) { mostrarError('errPagoVence','Formato MM / AA.'); ok=false; } else ocultarError('errPagoVence');
-    if (cvv.length < 3)         { mostrarError('errPagoCVV','CVV inválido.'); ok=false; } else ocultarError('errPagoCVV');
-    if (!ok) return;
-    // guardar el pago
-    const recs = Almacen.obtenerRegistros();
-    const i = recs.findIndex(r => r.id === this._idPago);
-    recs[i] = {...recs[i], exitTime: res.exitTime, cost: res.cost, status: 'completed'};
-    Almacen.guardarRegistros(recs);
-    Modal.cerrar('capaPago');
-    this.renderizarMisVehiculos();
-    this.renderizarPanelCliente();
-    lanzarToast(`Pago exitoso — Total: ${formatearMoneda(res.cost)}`, 'success');
-  },
-  iniciarMapa() {
-    if (this._mapaIniciado) { this._mapa.invalidateSize(); return; }
-    // Edificio TEC, Zona 4, Guatemala
-    const lat = 14.6056, lng = -90.5133;
-    this._mapa = L.map('mapaLeaflet', { zoomControl: true, scrollWheelZoom: false }).setView([lat, lng], 17);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19
-    }).addTo(this._mapa);
-    const icono = L.divIcon({
-      html: '<div style="background:var(--primary);width:36px;height:36px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4)"></div>',
-      iconSize: [36, 36],
-      iconAnchor: [18, 36],
-      className: ''
-    });
-    L.marker([lat, lng], { icon: icono })
-      .addTo(this._mapa)
-      .bindPopup('<b style="font-family:Barlow Condensed,sans-serif;font-size:15px">Campus Parking</b><br><span style="font-size:13px;color:#555">Edificio TEC, Zona 4<br>Ciudad de Guatemala</span>', { maxWidth: 200 })
-      .openPopup();
-    this._mapaIniciado = true;
-  },
   _vincularEventos() {
-    
+
     // toggle entre login y registro
     $('enlaceIrARegistro').onclick = (e) => {
       e.preventDefault();
@@ -936,7 +899,7 @@ const Aplicacion = {
       $('tarjetaRegistro').classList.add('hidden');
       $('tarjetaLogin').classList.remove('hidden');
     };
-    
+
     // crear cuenta nueva
     $('btnRegistrarCuenta').onclick = () => {
       const nom = $('regNombre').value.trim();
@@ -952,47 +915,47 @@ const Aplicacion = {
         $('registroError').classList.remove('hidden');
       }
     };
-    
+
     // submit del login
     $('btnIngresar').onclick = () => {
       const email  = $('correoLogin').value.trim();
       const pass   = $('claveLogin').value;
-      if (Autenticacion.iniciarSesion(email, pass)) { 
-        ocultarError('errorLogin'); 
-        this.mostrarApp(); 
+      if (Autenticacion.iniciarSesion(email, pass)) {
+        ocultarError('errorLogin');
+        this.mostrarApp();
       }
       else $('errorLogin').classList.remove('hidden');
     };
-    
-    // navegación
+
+    // navegacion
     document.querySelectorAll('.ni[data-view]').forEach(b => b.addEventListener('click', () => Navegacion.irA(b.dataset.view)));
-    
+
     // hamburguesa mobile
     $('btnHamburguesa').addEventListener('click', () => Navegacion.alternarBarraLateral());
     $('capaSuperpuestaLateral').addEventListener('click', () => Navegacion.cerrarBarraLateral());
-    
-    // cerrar sesión
+
+    // cerrar sesion
     $('btnCerrarSesion').addEventListener('click', () => { if(confirm('¿Cerrar sesión?')) Autenticacion.cerrarSesion(); });
     $('btnCerrarSesionCliente').onclick = () => { if(confirm('¿Cerrar sesión de cliente?')) Autenticacion.cerrarSesion(); };
-    
-    // perfil
+
+    // perfil admin
     $('btnPerfilBarra').addEventListener('click', () => Perfil.abrir());
     $('btnGuardarPerfil').addEventListener('click', () => Perfil.guardar());
-    
-    // tipos de vehículo
+
+    // tipos de vehiculo
     $('btnAgregarTipoVehiculo').addEventListener('click', () => TiposVehiculo.abrirNuevo());
     $('btnGuardarTipoVehiculo').addEventListener('click', () => TiposVehiculo.guardar());
-    
+
     // parqueadero
     $('btnAgregarParqueadero').addEventListener('click', () => ParqueaderoModulo.abrirNuevo());
     $('btnGuardarParqueadero').addEventListener('click', () => ParqueaderoModulo.guardar());
     $('btnCalcular').addEventListener('click', () => ParqueaderoModulo._calcularCosto());
     $('btnTerminar').addEventListener('click', () => ParqueaderoModulo.finalizar());
-    
-    // placas siempre en mayúscula
+
+    // placas siempre en mayuscula
     $('placaParqueadero').addEventListener('input', function(){ this.value = this.value.toUpperCase(); });
-    
-    // búsqueda en tiempo real
+
+    // busqueda en tiempo real
     $('buscarParqueadero').addEventListener('input', function(){ ParqueaderoModulo._busqueda = this.value.trim(); ParqueaderoModulo.renderizar(); });
   }
 };

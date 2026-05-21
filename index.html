@@ -415,6 +415,7 @@
 
 <!-- MODALES -->
 
+<!-- perfil admin -->
 <div class="overlay" id="capaPerfil">
   <div class="modal">
     <div class="mh"><span class="mt">Mi perfil</span><button class="mx" data-close="capaPerfil">✕</button></div>
@@ -431,6 +432,7 @@
   </div>
 </div>
 
+<!-- tipos de vehiculo -->
 <div class="overlay" id="capaTiposVehiculo">
   <div class="modal" style="max-width:460px">
     <div class="mh"><span class="mt" id="tituloModalTipoVehiculo">Nuevo tipo de vehículo</span><button class="mx" data-close="capaTiposVehiculo">✕</button></div>
@@ -443,34 +445,40 @@
   </div>
 </div>
 
+<!-- registro de parqueadero — slot ahora es un select generado por js -->
 <div class="overlay" id="capaParqueadero">
   <div class="modal" style="max-width:480px">
     <div class="mh"><span class="mt" id="tituloModalParqueadero">Registrar entrada</span><button class="mx" data-close="capaParqueadero">✕</button></div>
     <div class="mb">
       <div class="fgrid">
         <div class="fg"><label class="fl">Placa</label><input type="text" id="placaParqueadero" class="fc mono" placeholder="ABC123" maxlength="6"> <span class="fe hidden" id="errorPlacaParqueadero"></span></div>
-        <div class="fg"><label class="fl">Slot</label><input type="text" id="slotParqueadero" class="fc mono" placeholder="A-01"> <span class="fe hidden" id="errorSlotParqueadero"></span></div>
+        <!-- el slot se elige de la lista de espacios disponibles, no se escribe a mano -->
+        <div class="fg"><label class="fl">Slot</label><select id="slotParqueadero" class="fc mono"></select> <span class="fe hidden" id="errorSlotParqueadero"></span></div>
       </div>
       <div class="fg"><label class="fl">Tipo de vehículo</label><select id="tipoParqueadero" class="fc"></select> <span class="fe hidden" id="errorTipoParqueadero"></span></div>
-      <div class="fgrid">
-        <div class="fg"><label class="fl">Fecha de ingreso</label><input type="date" id="fechaParqueadero" class="fc"></div>
-        <div class="fg"><label class="fl">Hora de entrada</label><input type="time" id="entradaParqueadero" class="fc"></div>
-      </div>
-      <div class="fgrid">
-        <div class="fg"><label class="fl">Hora de salida</label><input type="time" id="salidaParqueadero" class="fc"><span class="fe hidden" id="errorSalidaParqueadero"></span></div>
-        <div class="fg" style="display:flex; align-items:flex-end; padding-bottom:2px"><span style="font-size:12px;color:var(--text-d)">Dejar vacío si el vehículo sigue activo.</span></div>
+      <div class="fg"><label class="fl">Fecha de ingreso</label><input type="date" id="fechaParqueadero" class="fc"></div>
+      <!-- la hora de entrada se registra automaticamente al abrir el modal -->
+      <div class="fg">
+        <label class="fl">Hora de entrada</label>
+        <input type="text" id="entradaParqueadero" class="fc mono" readonly style="background:var(--bg); cursor:default; color:var(--text-d)">
+        <span style="font-size:11px; color:var(--text-m); margin-top:4px; display:block">Se registra automaticamente al abrir este formulario.</span>
       </div>
     </div>
     <div class="mf"><button class="btn btn-ghost" data-close="capaParqueadero">Cancelar</button><button class="btn btn-primary" id="btnGuardarParqueadero">Registrar</button></div>
   </div>
 </div>
 
+<!-- registrar salida — la hora de salida se toma en el momento de confirmar -->
 <div class="overlay" id="capaFinalizar">
   <div class="modal" style="max-width:480px">
     <div class="mh"><span class="mt">Registrar salida</span><button class="mx" data-close="capaFinalizar">✕</button></div>
     <div class="mb">
       <div id="infoFinalizar" style="font-size:14px; color:var(--text-d); padding:10px 14px; background:var(--bg); border-radius:var(--rs); border:1px solid var(--border)"></div>
-      <div class="fg"><label class="fl">Hora de salida</label><input type="time" id="salidaFinalizar" class="fc"><span class="fe hidden" id="errorFinalizar"></span></div>
+      <!-- se elimino el campo de hora manual; la salida usa la hora actual al confirmar -->
+      <div style="padding:10px 14px; background:var(--bg); border-radius:var(--rs); border:1px solid var(--border); margin-top:12px; font-size:13px; color:var(--text-d)">
+        La hora de salida se registrara automaticamente al confirmar.
+      </div>
+      <span class="fe hidden" id="errorFinalizar"></span>
       <div class="cdisplay hidden" id="pantallaCosto">
         <div class="cdisplay-lbl">Costo del servicio</div>
         <div class="cdisplay-dur" id="duracionCosto"></div>
@@ -511,24 +519,30 @@
   </div>
 </div>
 
+<!-- registro de vehiculo cliente — slot tambien es select -->
 <div class="overlay" id="capaRegistroVehiculoCliente">
   <div class="modal" style="max-width:480px">
     <div class="mh"><span class="mt">Registrar vehículo</span><button class="mx" data-close="capaRegistroVehiculoCliente">✕</button></div>
     <div class="mb">
       <div class="fgrid">
         <div class="fg"><label class="fl">Placa</label><input type="text" id="cliPlaca" class="fc mono" placeholder="ABC123" maxlength="6"><span class="fe hidden" id="errCliPlaca"></span></div>
-        <div class="fg"><label class="fl">Slot</label><input type="text" id="cliSlot" class="fc mono" placeholder="A-01"><span class="fe hidden" id="errCliSlot"></span></div>
+        <!-- igual que en admin: slot es un select con los espacios disponibles -->
+        <div class="fg"><label class="fl">Slot</label><select id="cliSlot" class="fc mono"></select><span class="fe hidden" id="errCliSlot"></span></div>
       </div>
       <div class="fg"><label class="fl">Tipo de vehículo</label><select id="cliTipo" class="fc"></select><span class="fe hidden" id="errCliTipo"></span></div>
-      <div class="fgrid">
-        <div class="fg"><label class="fl">Fecha</label><input type="date" id="cliFecha" class="fc"></div>
-        <div class="fg"><label class="fl">Hora de entrada</label><input type="time" id="cliEntrada" class="fc"></div>
+      <div class="fg"><label class="fl">Fecha</label><input type="date" id="cliFecha" class="fc"></div>
+      <!-- hora de entrada automatica igual que en el admin -->
+      <div class="fg">
+        <label class="fl">Hora de entrada</label>
+        <input type="text" id="cliEntrada" class="fc mono" readonly style="background:var(--bg); cursor:default; color:var(--text-d)">
+        <span style="font-size:11px; color:var(--text-m); margin-top:4px; display:block">Se registra automaticamente al abrir este formulario.</span>
       </div>
     </div>
     <div class="mf"><button class="btn btn-ghost" data-close="capaRegistroVehiculoCliente">Cancelar</button><button class="btn btn-success" id="btnGuardarVehiculoCliente">Registrar</button></div>
   </div>
 </div>
 
+<!-- perfil cliente -->
 <div class="overlay" id="capaPerfilCliente">
   <div class="modal" style="max-width:460px">
     <div class="mh"><span class="mt">Mi perfil</span><button class="mx" data-close="capaPerfilCliente">✕</button></div>
@@ -545,7 +559,7 @@
   </div>
 </div>
 
-<!-- MODAL PAGO -->
+<!-- MODAL PAGO — la hora de salida se captura automaticamente al calcular -->
 <div class="overlay" id="capaPago">
   <div class="modal" style="max-width:500px">
     <div class="mh">
@@ -554,9 +568,11 @@
     </div>
     <div class="mb">
       <div id="infoPago" style="font-size:14px;color:var(--text-d);padding:12px 16px;background:var(--bg);border-radius:var(--rs);border:1px solid var(--border);line-height:1.8"></div>
+      <!-- hora de salida automatica, se muestra solo de lectura -->
       <div class="fg">
         <label class="fl">Hora de salida</label>
-        <input type="time" id="salidaPago" class="fc">
+        <input type="text" id="salidaPago" class="fc mono" readonly style="background:var(--bg); cursor:default; color:var(--text-d)">
+        <span style="font-size:11px; color:var(--text-m); margin-top:4px; display:block">Se calcula automaticamente con la hora actual.</span>
         <span class="fe hidden" id="errorSalidaPago"></span>
       </div>
       <div class="cdisplay hidden" id="pantallaCostoPago">
