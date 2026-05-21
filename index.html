@@ -108,6 +108,12 @@
         <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 12h3a2 2 0 0 0 0-4H9v8"/></svg>
         Parqueadero
       </button>
+
+      <!-- boton reportes -->
+      <button class="ni" data-view="reportes">
+      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        Reportes
+      </button>
     </nav>
     <div class="sfooter">
       <div class="uinfo" id="btnPerfilBarra">
@@ -234,6 +240,59 @@
             </div>
             <div class="empty-ttl">Sin vehículos activos</div>
             <div class="empty-txt">Registra una entrada para comenzar.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- REPORTES: estadisticas -->
+      <div class="vs" id="vistaReportes">
+        <div class="sh">
+          <div>
+            <h1 class="sh-title">Reportes</h1>
+            <p class="sh-sub">Estadísticas de servicios por tipo de vehiculo.</p>
+          </div>
+        </div>
+
+        <!-- filtro de fechas-->
+        <div class="dc" style="margin-bottom:24px">
+          <div class="dc-hdr"><h3 class="dc-ttl">Rango de fechas</h3></div>
+          <div style="display:flex; gap:16px; align-items:flex-end; padding:16px; flex-wrap:wrap">
+            <div class="fg" style="margin:0; min-width:160px">
+              <label class="fl">Fecha inicio</label>
+              <input type="date" id="reporteFechaInicio" class="fc">
+            </div>
+            <div class="fg" style="margin:0; min-width:160px">
+              <label class="fl">Fecha fin</label>
+              <input type="date" id="reporteFechaFin" class="fc">
+            </div>
+            <button class="btn btn-primary" id="btnGenerarReporte">Generar reporte</button>
+          </div>
+        </div>
+
+        <!-- tabla de resultados -->
+        <div class="dc">
+          <div class="dc-hdr"><h3 class="dc-ttl">Resultados</h3></div>
+          <div class="tw">
+            <table>
+              <thead>
+                <tr>
+                  <th>Codigo</th>
+                  <th>Nombre del tipo</th>
+                  <th style="text-align:center">Vehiculos parqueados</th>
+                  <th style="text-align:center">Tiempo total</th>
+                  <th style="text-align:right">Total recaudado</th>
+                </tr>
+              </thead>
+              <tbody id="cuerpoReportes"></tbody>
+            </table>
+          </div>
+          <!-- estado vacio -->
+          <div class="empty hidden" id="vacioReportes">
+            <div class="empty-icon">
+              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+            </div>
+            <div class="empty-ttl">Sin resultados</div>
+            <div class="empty-txt">No hay registros completados en el rango seleccionado.</div>
           </div>
         </div>
       </div>
@@ -445,7 +504,7 @@
   </div>
 </div>
 
-<!-- registro de parqueadero-->
+<!-- registro de parqueadero -->
 <div class="overlay" id="capaParqueadero">
   <div class="modal" style="max-width:480px">
     <div class="mh"><span class="mt" id="tituloModalParqueadero">Registrar entrada</span><button class="mx" data-close="capaParqueadero">✕</button></div>
@@ -516,19 +575,18 @@
   </div>
 </div>
 
-<!-- registro de vehiculo cliente — slot select -->
+<!-- registro de vehiculo cliente -->
 <div class="overlay" id="capaRegistroVehiculoCliente">
   <div class="modal" style="max-width:480px">
     <div class="mh"><span class="mt">Registrar vehículo</span><button class="mx" data-close="capaRegistroVehiculoCliente">✕</button></div>
     <div class="mb">
       <div class="fgrid">
         <div class="fg"><label class="fl">Placa</label><input type="text" id="cliPlaca" class="fc mono" placeholder="ABC123" maxlength="6"><span class="fe hidden" id="errCliPlaca"></span></div>
-        <!-- igual que en admin: slot es un select con los espacios disponibles -->
         <div class="fg"><label class="fl">Slot</label><select id="cliSlot" class="fc mono"></select><span class="fe hidden" id="errCliSlot"></span></div>
       </div>
       <div class="fg"><label class="fl">Tipo de vehículo</label><select id="cliTipo" class="fc"></select><span class="fe hidden" id="errCliTipo"></span></div>
       <div class="fg"><label class="fl">Fecha</label><input type="date" id="cliFecha" class="fc"></div>
-      <!-- hora de entrada automatica igual que en el admin -->
+      <!-- hora de entrada automatica -->
       <div class="fg">
         <label class="fl">Hora de entrada</label>
         <input type="text" id="cliEntrada" class="fc mono" readonly style="background:var(--bg); cursor:default; color:var(--text-d)">
@@ -565,6 +623,7 @@
     </div>
     <div class="mb">
       <div id="infoPago" style="font-size:14px;color:var(--text-d);padding:12px 16px;background:var(--bg);border-radius:var(--rs);border:1px solid var(--border);line-height:1.8"></div>
+      <!-- hora de salida automatica -->
       <div class="fg">
         <label class="fl">Hora de salida</label>
         <input type="text" id="salidaPago" class="fc mono" readonly style="background:var(--bg); cursor:default; color:var(--text-d)">

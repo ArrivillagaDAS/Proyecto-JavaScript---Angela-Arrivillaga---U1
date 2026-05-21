@@ -210,10 +210,11 @@ const Modal = {
 document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => Modal.cerrar(b.dataset.close)));
 document.querySelectorAll('.overlay').forEach(o => o.addEventListener('click', e => { if(e.target===o) Modal.cerrar(o.id); }));
 
+
 // navegacion entre vistas del admin
 
 const Navegacion = {
-  titulos: { panel:'Dashboard', tiposVehiculo:'Tipos de Vehículo', parqueadero:'Parqueadero' },
+  titulos: { panel:'Dashboard', tiposVehiculo:'Tipos de Vehículo', parqueadero:'Parqueadero', reportes:'Reportes' },
   irA(vista) {
     document.querySelectorAll('.vs').forEach(s => s.classList.remove('active'));
     document.querySelectorAll('.ni[data-view]').forEach(n => n.classList.remove('active'));
@@ -225,6 +226,8 @@ const Navegacion = {
     if (vista==='panel') PanelDashboard.renderizar();
     else if (vista==='tiposVehiculo') TiposVehiculo.renderizar();
     else if (vista==='parqueadero') ParqueaderoModulo.renderizar();
+    // al entrar a reportes inicializamos las fechas por defecto
+    else if (vista==='reportes') ReportesModulo.init();
   },
   cerrarBarraLateral() { $('barraLateral').classList.remove('open'); $('capaSuperpuestaLateral').classList.remove('show'); },
   alternarBarraLateral() { $('barraLateral').classList.toggle('open'); $('capaSuperpuestaLateral').classList.toggle('show'); }
@@ -262,6 +265,7 @@ const Perfil = {
     setTimeout(() => Autenticacion.cerrarSesion(), 1800);
   }
 };
+
 
 // crud de tipos de vehiculo
 
@@ -493,6 +497,7 @@ const ParqueaderoModulo = {
     lanzarToast('Registro eliminado.', 'success'); this.renderizar();
   }
 };
+
 
 // dashboard — estadísticas y tabla de recientes
 
@@ -845,6 +850,104 @@ const ClienteModulo = {
 };
 
 
+// reporte estadístico por tipo de vehículo
+// muestra: codigo, nombre, numero de vehiculos parqueados, tiempo total de los servicios y total recaudado
+
+const ReportesModulo = {
+
+  // establece fechas por defecto y vacía la tabla
+  init() {
+    const hoy = new Date().toISOString().split('T')[0];
+    const primerDiaMes = hoy.slice(0, 8) + '01';
+    $('reporteFechaInicio').value = primerDiaMes;
+    $('reporteFechaFin').value = hoy;
+    // mostramos la tabla vacía al entrar
+    $('cuerpoReportes').innerHTML = '';
+    $('vacioReportes').classList.remove('hidden');
+  },
+
+  // calcula la diferencia en horas entre dos strings
+  _calcularHoras(horaEntrada, horaSalida) {
+    if (!horaEntrada || !horaSalida) return 0;
+    const [hE, mE] = horaEntrada.split(':').map(Number);
+    const [hS, mS] = horaSalida.split(':').map(Number);
+    const minutos = (hS * 60 + mS) - (hE * 60 + mE);
+    return minutos > 0 ? minutos / 60 : 0;
+  },
+
+  // convierte horas decimales
+  _formatearTiempo(horas) {
+    const h = Math.floor(horas);
+    const m = Math.round((horas - h) * 60);
+    if (h === 0) return `${m}m`;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  },
+
+  // genera el reporte con los filtros actuales
+  generar() {
+    const inicio = $('reporteFechaInicio').value;
+    const fin    = $('reporteFechaFin').value;
+
+    if (!inicio || !fin) { lanzarToast('Selecciona ambas fechas para generar el reporte.', 'warning'); return; }
+    if (inicio > fin)    { lanzarToast('La fecha de inicio no puede ser mayor a la fecha fin.', 'error'); return; }
+
+    const tipos     = Almacen.obtenerTipos();
+    const registros = Almacen.obtenerRegistros();
+
+    // filtramos solo registros completados dentro del rango de fechas
+    const filtrados = registros.filter(r =>
+      r.status === 'completed' && r.date >= inicio && r.date <= fin
+    );
+
+    if (!filtrados.length) {
+      $('cuerpoReportes').innerHTML = '';
+      $('vacioReportes').classList.remove('hidden');
+      return;
+    }
+
+    // agrupamos los datos por tipo de vehiculo
+    const agrupado = {};
+    filtrados.forEach(r => {
+      if (!agrupado[r.vehicleTypeId]) {
+        agrupado[r.vehicleTypeId] = { cantidad: 0, horasTotal: 0, montoTotal: 0 };
+      }
+      agrupado[r.vehicleTypeId].cantidad++;
+      agrupado[r.vehicleTypeId].horasTotal += this._calcularHoras(r.entryTime, r.exitTime);
+      agrupado[r.vehicleTypeId].montoTotal += r.cost || 0;
+    });
+
+    const body = $('cuerpoReportes');
+    $('vacioReportes').classList.add('hidden');
+
+    // construimos las filas por tipo de vehiculo
+    body.innerHTML = tipos
+      .filter(t => agrupado[t.id])
+      .map(t => {
+        const d = agrupado[t.id];
+        return `<tr>
+          <td><span class="mono">${t.code}</span></td>
+          <td>${t.name}</td>
+          <td style="text-align:center"><strong>${d.cantidad}</strong></td>
+          <td style="text-align:center; font-family:var(--fm)">${this._formatearTiempo(d.horasTotal)}</td>
+          <td style="text-align:right"><strong>${formatearMoneda(d.montoTotal)}</strong></td>
+        </tr>`;
+      }).join('');
+
+    // fila de totales al final
+    const totalVehiculos = filtrados.length;
+    const totalHoras     = Object.values(agrupado).reduce((s, d) => s + d.horasTotal, 0);
+    const totalMonto     = Object.values(agrupado).reduce((s, d) => s + d.montoTotal, 0);
+
+    body.innerHTML += `<tr style="border-top:2px solid var(--border); background:var(--bg)">
+      <td colspan="2" style="font-weight:700; font-family:'Barlow Condensed',sans-serif; letter-spacing:.04em; text-transform:uppercase; font-size:11px; color:var(--text-d)">Totales</td>
+      <td style="text-align:center"><strong>${totalVehiculos}</strong></td>
+      <td style="text-align:center; font-family:var(--fm)">${this._formatearTiempo(totalHoras)}</td>
+      <td style="text-align:right"><strong>${formatearMoneda(totalMonto)}</strong></td>
+    </tr>`;
+  }
+};
+
+
 // inicializacion y arranque de la app
 
 const Aplicacion = {
@@ -949,6 +1052,9 @@ const Aplicacion = {
 
     // busqueda en tiempo real
     $('buscarParqueadero').addEventListener('input', function(){ ParqueaderoModulo._busqueda = this.value.trim(); ParqueaderoModulo.renderizar(); });
+
+    // boton de generar reporte
+    $('btnGenerarReporte').addEventListener('click', () => ReportesModulo.generar());
   }
 };
 
