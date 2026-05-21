@@ -243,7 +243,7 @@
 
 <!-- PORTAL CLIENTE -->
 <div class="av hidden" id="vistaCliente">
-  <aside class="sidebar">
+  <aside class="sidebar" id="barraLateralCliente">
     <div class="slogo" style="border-bottom:1px solid var(--border)">
       <div class="slogo-icon" style="background:var(--success)">
         <svg width="20" height="20" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -290,7 +290,12 @@
 
   <main class="mc">
     <header class="topbar" style="background: var(--surface); border-bottom:1px solid var(--border)">
-      <h2 class="tb-title" id="tituloBarraCliente">Mi estado</h2>
+      <div style="display:flex; align-items:center; gap:12px">
+        <button class="hbg" id="btnHamburguesaCliente">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <h2 class="tb-title" id="tituloBarraCliente">Mi estado</h2>
+      </div>
     </header>
     <div class="pc">
 
