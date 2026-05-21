@@ -93,7 +93,7 @@ function ocultarError(id) { const e = $(id); if(e) e.classList.add('hidden'); }
 function horaActual() { return new Date().toTimeString().slice(0,5); }
 
 
-// localStorage wrapper — lectura/escritura de datos
+// localStorage wrapper 
 
 const Almacen = {
   _obtener(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
@@ -109,7 +109,6 @@ if (!Almacen._obtener('cp_user')) Almacen.guardarUsuario({ name:'Admin', email:'
 
 
 // slots disponibles del parqueadero — A-01 hasta A-20
-// se generan dinamicamente y se filtran segun cuales ya esten ocupados
 
 const SLOTS_TOTALES = Array.from({ length: 20 }, (_, i) => {
   const num = String(i + 1).padStart(2, '0');
@@ -117,7 +116,6 @@ const SLOTS_TOTALES = Array.from({ length: 20 }, (_, i) => {
 });
 
 // devuelve los slots que no tienen un registro activo en este momento
-// si se pasa un idExcluir, ese registro no cuenta (util al editar)
 function obtenerSlotsLibres(idExcluir = null) {
   const recs = Almacen.obtenerRegistros();
   const ocupados = recs
@@ -127,11 +125,9 @@ function obtenerSlotsLibres(idExcluir = null) {
 }
 
 // llena un <select> con los slots libres
-// si se pasa un slotActual, lo incluye aunque este ocupado (para no perderlo al editar)
 function llenarSelectSlots(selectId, slotActual = null, idExcluir = null) {
   const sel = $(selectId);
   const libres = obtenerSlotsLibres(idExcluir);
-  // si hay un slot actual que ya no esta libre, lo agregamos igual para que no desaparezca
   const lista = (slotActual && !libres.includes(slotActual))
     ? [slotActual, ...libres]
     : libres;
@@ -214,7 +210,6 @@ const Modal = {
 document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => Modal.cerrar(b.dataset.close)));
 document.querySelectorAll('.overlay').forEach(o => o.addEventListener('click', e => { if(e.target===o) Modal.cerrar(o.id); }));
 
-
 // navegacion entre vistas del admin
 
 const Navegacion = {
@@ -238,7 +233,6 @@ const Navegacion = {
 
 // perfil del administrador
 // al guardar cualquier cambio (nombre, correo o contrasena) se cierra la sesion
-// para que el admin tenga que volver a autenticarse con los nuevos datos
 
 const Perfil = {
   abrir() {
@@ -268,7 +262,6 @@ const Perfil = {
     setTimeout(() => Autenticacion.cerrarSesion(), 1800);
   }
 };
-
 
 // crud de tipos de vehiculo
 
@@ -500,7 +493,6 @@ const ParqueaderoModulo = {
     lanzarToast('Registro eliminado.', 'success'); this.renderizar();
   }
 };
-
 
 // dashboard — estadísticas y tabla de recientes
 

@@ -85,6 +85,3 @@ contraseña: Admin123
 ## 📱 Responsive
  
 La app funciona en móvil, tablet y escritorio. La barra lateral se colapsa en pantallas pequeñas con un menú hamburguesa.
-
----
-COMMIT PRUEBA - para validacion de credenciales
